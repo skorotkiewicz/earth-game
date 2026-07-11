@@ -18,6 +18,16 @@ dependencies, accounts, outbound requests, scoring, or AI-generated advice.
 - Python 3.8 or newer
 - A Unix-like terminal
 
+## Install on Arch Linux
+
+Earth Game is available from the [AUR](https://aur.archlinux.org/packages/earth-game):
+
+```sh
+yay -S earth-game
+```
+
+After installation, run `earth` or `earth-game` from anywhere.
+
 ## Quick start
 
 ```sh
