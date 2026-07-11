@@ -53,6 +53,9 @@ class EarthCLITest(unittest.TestCase):
         self.assertIn("Review: due", today.stdout)
 
     def test_help_is_discoverable_at_every_command_level(self):
+        version = self.run_earth("--version")
+        self.assertEqual("earth 0.1.0\n", version.stdout)
+
         for args, expected in (
             ((), "earth init"),
             (("character",), "edit      edit the profile"),

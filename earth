@@ -29,6 +29,8 @@ from earth_core import (
     update_character,
 )
 
+VERSION = "0.1.0"
+
 
 def ask(label, default=None, option=None):
     suffix = f" [{default}]" if default else ""
@@ -334,6 +336,7 @@ def build_parser():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     parser.set_defaults(handler=lambda _args: parser.print_help())
     init = commands.add_parser(

@@ -17,20 +17,21 @@ check:
 test: check
     python3 -m unittest -v
 
-add-tag VERSION: test
+add-tag:
     #!/usr/bin/env bash
     set -euo pipefail
-    version="{{ VERSION }}"
-    tag="v${version#v}"
-    grep -qxF "pkgver=${tag#v}" PKGBUILD || { echo "Set pkgver=${tag#v} in PKGBUILD first" >&2; exit 1; }
-    [ -z "$(git status --porcelain)" ] || { echo "Working tree is not clean" >&2; exit 1; }
-    git tag -a "$tag" -m "Release $tag"
-    git push --atomic origin main "$tag"
+    VERSION=$(./earth --version)
+    VERSION=${VERSION##* }
+    git push origin main
+    git tag -a "v${VERSION}" -m "Release v${VERSION}"
+    git push origin "v${VERSION}"
 
-remove-tag VERSION:
+# `just remove-tag v0.0.0` or `just remove-tag` (uses fzf)
+remove-tag VERSION="":
     #!/usr/bin/env bash
     set -euo pipefail
-    version="{{ VERSION }}"
-    tag="v${version#v}"
+    tag="{{ VERSION }}"
+    [ -z "$tag" ] && tag=$(git tag | sort -V | fzf --prompt="Select tag to remove: ")
+    [ -z "$tag" ] && echo "No tag selected" && exit 1
     git tag -d "$tag"
     git push --delete origin "$tag"
