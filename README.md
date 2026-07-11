@@ -43,6 +43,7 @@ Commands prompt for missing text. Options also support non-interactive use:
 ```
 
 Run `./earth --help` or `./earth COMMAND --help` for the complete interface.
+See [USAGE.md](USAGE.md) for complete real-world walkthroughs.
 
 ## Commands
 
