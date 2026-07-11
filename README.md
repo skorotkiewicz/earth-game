@@ -63,7 +63,7 @@ Commands prompt for missing text. Options also support non-interactive use:
 ```
 
 Run `./earth --help` or `./earth COMMAND --help` for the complete interface.
-See [USAGE.md](USAGE.md) for complete real-world walkthroughs.
+See [USAGE.md](docs/USAGE.md) for complete real-world walkthroughs.
 
 ## Commands
 
@@ -127,4 +127,4 @@ python3 -m py_compile earth earth_core.py earth_web.py
 - `earth_core.py` contains SQLite and shared domain operations.
 - `earth_web.py` contains the local HTTP server and HTML interface.
 
-See [ROADMAP.md](ROADMAP.md) for the product decisions and future-change rules.
+See [ROADMAP.md](docs/ROADMAP.md) for the product decisions and future-change rules.
