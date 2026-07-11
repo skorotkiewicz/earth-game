@@ -147,7 +147,11 @@ def cmd_quest_list(args):
                 ORDER BY status != 'current', id"""
         ).fetchall()
     if not quests:
-        print("No quests." if args.all else "No current or planned quests. Use --all for history.")
+        print(
+            "No quests."
+            if args.all
+            else "No current or planned quests. Use --all for history."
+        )
         return
     for quest in quests:
         tags = ", ".join(
@@ -177,8 +181,12 @@ def cmd_quest_start(args):
         current = db.execute(
             "SELECT id, title FROM quests WHERE status = 'current'"
         ).fetchone()
-        if current and not args.yes and not confirm(
-            f"Return current quest [{current['id']}] {one_line(current['title'])} to the backlog?"
+        if (
+            current
+            and not args.yes
+            and not confirm(
+                f"Return current quest [{current['id']}] {one_line(current['title'])} to the backlog?"
+            )
         ):
             raise EarthError("quest change cancelled")
         start_quest(db, args.id)
@@ -211,14 +219,14 @@ def cmd_loop_add(args):
 def cmd_loop_list(args):
     where = "" if args.all else "WHERE status = 'open'"
     with database() as db:
-        loops = db.execute(
-            f"SELECT * FROM open_loops {where} ORDER BY id"
-        ).fetchall()
+        loops = db.execute(f"SELECT * FROM open_loops {where} ORDER BY id").fetchall()
     if not loops:
         print("No loops." if args.all else "No open loops. Use --all for history.")
         return
     for loop in loops:
-        print(f"[{loop['id']}] {loop['status'].upper()} {one_line(loop['description'])}")
+        print(
+            f"[{loop['id']}] {loop['status'].upper()} {one_line(loop['description'])}"
+        )
 
 
 def cmd_loop_close(args):
@@ -231,11 +239,36 @@ def cmd_loop_close(args):
 
 def cmd_review(args):
     questions = (
-        ("love_connection", "Where did love or connection guide you?", args.love, "--love"),
-        ("adaptation", "What changed, and how did you adapt?", args.adaptation, "--adaptation"),
-        ("alignment", "Is the current quest authentic and aligned?", args.alignment, "--alignment"),
-        ("contribution", "What did you contribute?", args.contribution, "--contribution"),
-        ("next_action", "What next action or pillar now matters?", args.next_action, "--next"),
+        (
+            "love_connection",
+            "Where did love or connection guide you?",
+            args.love,
+            "--love",
+        ),
+        (
+            "adaptation",
+            "What changed, and how did you adapt?",
+            args.adaptation,
+            "--adaptation",
+        ),
+        (
+            "alignment",
+            "Is the current quest authentic and aligned?",
+            args.alignment,
+            "--alignment",
+        ),
+        (
+            "contribution",
+            "What did you contribute?",
+            args.contribution,
+            "--contribution",
+        ),
+        (
+            "next_action",
+            "What next action or pillar now matters?",
+            args.next_action,
+            "--next",
+        ),
     )
     with database() as db:
         loops = db.execute(
@@ -253,9 +286,13 @@ def cmd_review(args):
             for key, question, value, option in questions
         }
         update_quest = args.update_quest
-        current = db.execute("SELECT id FROM quests WHERE status = 'current'").fetchone()
+        current = db.execute(
+            "SELECT id FROM quests WHERE status = 'current'"
+        ).fetchone()
         if current and not update_quest and sys.stdin.isatty():
-            update_quest = confirm("Use that answer as the current quest's next action?")
+            update_quest = confirm(
+                "Use that answer as the current quest's next action?"
+            )
         if update_quest:
             answers["next_action"] = required(
                 answers["next_action"], "Next action", "--next"
@@ -358,15 +395,21 @@ def build_parser():
         "--values", dest="values_text", help="core values, as free text"
     )
     character_edit.add_argument("--strengths", help="natural or developed strengths")
-    character_edit.add_argument("--frictions", help="recurring obstacles or weak points")
-    character_edit.add_argument("--purpose", help="the contribution or direction that matters")
+    character_edit.add_argument(
+        "--frictions", help="recurring obstacles or weak points"
+    )
+    character_edit.add_argument(
+        "--purpose", help="the contribution or direction that matters"
+    )
     character_edit.add_argument(
         "--anti-vision", dest="anti_vision", help="the future to actively avoid"
     )
     character_edit.set_defaults(handler=cmd_character_edit)
 
     quest = commands.add_parser(
-        "quest", help="manage quests", description="Create and move quests through their lifecycle."
+        "quest",
+        help="manage quests",
+        description="Create and move quests through their lifecycle.",
     )
     quest_commands = quest.add_subparsers(dest="action", metavar="ACTION")
     quest.set_defaults(handler=lambda _args: quest.print_help())
@@ -376,9 +419,15 @@ def build_parser():
         "--next", dest="next_action", help="concrete next action; prompted if omitted"
     )
     quest_add.add_argument("--why", help="why this quest matters")
-    quest_add.add_argument("--pillar", choices=PILLARS, help="area of life this quest serves")
-    quest_add.add_argument("--driver", choices=DRIVERS, help="motivation behind this quest")
-    quest_add.add_argument("--horizon", help="free-form target horizon, such as 'this month'")
+    quest_add.add_argument(
+        "--pillar", choices=PILLARS, help="area of life this quest serves"
+    )
+    quest_add.add_argument(
+        "--driver", choices=DRIVERS, help="motivation behind this quest"
+    )
+    quest_add.add_argument(
+        "--horizon", help="free-form target horizon, such as 'this month'"
+    )
     quest_add.set_defaults(handler=cmd_quest_add)
     quest_list = quest_commands.add_parser("list", help="list quests")
     quest_list.add_argument(
@@ -386,16 +435,25 @@ def build_parser():
     )
     quest_list.set_defaults(handler=cmd_quest_list)
     quest_start = quest_commands.add_parser("start", help="make a quest current")
-    quest_start.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
     quest_start.add_argument(
-        "-y", "--yes", action="store_true", help="replace the current quest without prompting"
+        "id", type=int, metavar="ID", help="quest ID from 'quest list'"
+    )
+    quest_start.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="replace the current quest without prompting",
     )
     quest_start.set_defaults(handler=cmd_quest_start)
     quest_done = quest_commands.add_parser("done", help="complete a quest")
-    quest_done.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
+    quest_done.add_argument(
+        "id", type=int, metavar="ID", help="quest ID from 'quest list'"
+    )
     quest_done.set_defaults(handler=cmd_quest_done)
     quest_drop = quest_commands.add_parser("drop", help="drop a quest")
-    quest_drop.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
+    quest_drop.add_argument(
+        "id", type=int, metavar="ID", help="quest ID from 'quest list'"
+    )
     quest_drop.set_defaults(handler=cmd_quest_drop)
 
     loop = commands.add_parser(
@@ -416,7 +474,9 @@ def build_parser():
     )
     loop_list.set_defaults(handler=cmd_loop_list)
     loop_close = loop_commands.add_parser("close", help="close an open loop")
-    loop_close.add_argument("id", type=int, metavar="ID", help="open-loop ID from 'loop list'")
+    loop_close.add_argument(
+        "id", type=int, metavar="ID", help="open-loop ID from 'loop list'"
+    )
     loop_close.set_defaults(handler=cmd_loop_close)
 
     today = commands.add_parser("today", help="show the current focus")
@@ -449,7 +509,11 @@ def build_parser():
         description="Start a browser UI bound only to 127.0.0.1.",
     )
     web.add_argument(
-        "--port", type=web_port, default=8765, metavar="PORT", help="local port (default: 8765)"
+        "--port",
+        type=web_port,
+        default=8765,
+        metavar="PORT",
+        help="local port (default: 8765)",
     )
     web.add_argument(
         "--no-open", action="store_true", help="do not open the browser automatically"

@@ -83,18 +83,20 @@ def render_web(db, token, error=""):
         if review_due
         else f"Reviewed {last_review_at.astimezone().date().isoformat()}"
     )
-    error_html = f'<div class="error" role="alert">{html_text(error)}</div>' if error else ""
+    error_html = (
+        f'<div class="error" role="alert">{html_text(error)}</div>' if error else ""
+    )
 
     if current:
         current_html = f"""
         <article class="current">
-          <p class="eyebrow">Current quest · #{current['id']}</p>
-          <h2>{html_text(current['title'])}</h2>
-          <p class="next"><strong>Next:</strong> {html_text(current['next_action'])}</p>
+          <p class="eyebrow">Current quest · #{current["id"]}</p>
+          <h2>{html_text(current["title"])}</h2>
+          <p class="next"><strong>Next:</strong> {html_text(current["next_action"])}</p>
           {web_tags(current)}
           <div class="actions">
-            {action_form('/quest/done', token, current['id'], 'Complete', f"Complete quest #{current['id']}: {current['title']}")}
-            {action_form('/quest/drop', token, current['id'], 'Drop', f"Drop quest #{current['id']}: {current['title']}", 'quiet')}
+            {action_form("/quest/done", token, current["id"], "Complete", f"Complete quest #{current['id']}: {current['title']}")}
+            {action_form("/quest/drop", token, current["id"], "Drop", f"Drop quest #{current['id']}: {current['title']}", "quiet")}
           </div>
         </article>"""
     else:
@@ -105,31 +107,40 @@ def render_web(db, token, error=""):
           <p>Start a planned quest or create one below.</p>
         </article>"""
 
-    planned_html = "".join(
-        f"""
+    planned_html = (
+        "".join(
+            f"""
         <li>
-          <div><strong>#{quest['id']} · {html_text(quest['title'])}</strong>
-          <p>{html_text(quest['next_action'])}</p>{web_tags(quest)}</div>
+          <div><strong>#{quest["id"]} · {html_text(quest["title"])}</strong>
+          <p>{html_text(quest["next_action"])}</p>{web_tags(quest)}</div>
           <div class="actions">
-            {action_form('/quest/start', token, quest['id'], 'Replace current' if current else 'Make current', f"Make quest #{quest['id']} current: {quest['title']}")}
-            {action_form('/quest/drop', token, quest['id'], 'Drop', f"Drop quest #{quest['id']}: {quest['title']}", 'quiet')}
+            {action_form("/quest/start", token, quest["id"], "Replace current" if current else "Make current", f"Make quest #{quest['id']} current: {quest['title']}")}
+            {action_form("/quest/drop", token, quest["id"], "Drop", f"Drop quest #{quest['id']}: {quest['title']}", "quiet")}
           </div>
         </li>"""
-        for quest in planned
-    ) or '<li class="empty-row">No planned quests.</li>'
+            for quest in planned
+        )
+        or '<li class="empty-row">No planned quests.</li>'
+    )
 
-    loops_html = "".join(
-        f"""
-        <li><span>#{loop['id']} · {html_text(loop['description'])}</span>
-        {action_form('/loop/close', token, loop['id'], 'Close', f"Close open loop #{loop['id']}: {loop['description']}", 'quiet')}</li>"""
-        for loop in loops
-    ) or '<li class="empty-row">No open loops.</li>'
+    loops_html = (
+        "".join(
+            f"""
+        <li><span>#{loop["id"]} · {html_text(loop["description"])}</span>
+        {action_form("/loop/close", token, loop["id"], "Close", f"Close open loop #{loop['id']}: {loop['description']}", "quiet")}</li>"""
+            for loop in loops
+        )
+        or '<li class="empty-row">No open loops.</li>'
+    )
 
-    history_html = "".join(
-        f'<li><span class="status {quest["status"]}">{html_text(quest["status"])}</span> '
-        f'#{quest["id"]} · {html_text(quest["title"])}</li>'
-        for quest in history
-    ) or '<li class="empty-row">No quest history yet.</li>'
+    history_html = (
+        "".join(
+            f'<li><span class="status {quest["status"]}">{html_text(quest["status"])}</span> '
+            f"#{quest['id']} · {html_text(quest['title'])}</li>"
+            for quest in history
+        )
+        or '<li class="empty-row">No quest history yet.</li>'
+    )
 
     pillar_options = '<option value="">No pillar</option>' + "".join(
         f'<option value="{value}">{value.title()}</option>' for value in PILLARS
@@ -187,7 +198,7 @@ def render_web(db, token, error=""):
 <body>
   <header>
     <div><p class="kicker">Private · local · deliberate</p><h1>Earth Game</h1>
-      <p>{html_text(profile['purpose']) or 'Choose a quest. Take the next action. Review and adapt.'}</p></div>
+      <p>{html_text(profile["purpose"]) or "Choose a quest. Take the next action. Review and adapt."}</p></div>
     <div><span class="eyebrow">{review_label}</span> · <a href="/export">Export JSON</a></div>
   </header>
   <main>
@@ -222,12 +233,12 @@ def render_web(db, token, error=""):
     <section><h3>Character</h3>
       <form class="stack" method="post" action="/character">{csrf_field(token)}
         <div class="two">
-          <label>Values<textarea name="values_text">{html_text(profile['values_text'])}</textarea></label>
-          <label>Strengths<textarea name="strengths">{html_text(profile['strengths'])}</textarea></label>
-          <label>Frictions<textarea name="frictions">{html_text(profile['frictions'])}</textarea></label>
-          <label>Purpose<textarea name="purpose">{html_text(profile['purpose'])}</textarea></label>
+          <label>Values<textarea name="values_text">{html_text(profile["values_text"])}</textarea></label>
+          <label>Strengths<textarea name="strengths">{html_text(profile["strengths"])}</textarea></label>
+          <label>Frictions<textarea name="frictions">{html_text(profile["frictions"])}</textarea></label>
+          <label>Purpose<textarea name="purpose">{html_text(profile["purpose"])}</textarea></label>
         </div>
-        <label>Anti-vision<textarea name="anti_vision">{html_text(profile['anti_vision'])}</textarea></label>
+        <label>Anti-vision<textarea name="anti_vision">{html_text(profile["anti_vision"])}</textarea></label>
         <button type="submit">Save character</button>
       </form>
     </section>
@@ -268,7 +279,13 @@ def mutate_web(db, path, form):
             db,
             {
                 field: form.get(field, "")
-                for field in ("values_text", "strengths", "frictions", "purpose", "anti_vision")
+                for field in (
+                    "values_text",
+                    "strengths",
+                    "frictions",
+                    "purpose",
+                    "anti_vision",
+                )
             },
         )
     elif path == "/quest/add":
@@ -387,10 +404,15 @@ def web_server(port):
                 return True
             origin = self.headers.get("Origin")
             port_number = self.server.server_port
-            if check_origin and origin and origin not in {
-                f"http://127.0.0.1:{port_number}",
-                f"http://localhost:{port_number}",
-            }:
+            if (
+                check_origin
+                and origin
+                and origin
+                not in {
+                    f"http://127.0.0.1:{port_number}",
+                    f"http://localhost:{port_number}",
+                }
+            ):
                 self.respond(
                     HTTPStatus.FORBIDDEN,
                     "Untrusted Origin",
@@ -470,7 +492,9 @@ def web_server(port):
                     elif parts.path == "/export":
                         output = exported_json(db).encode("utf-8")
                         self.send_response(HTTPStatus.OK)
-                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header(
+                            "Content-Type", "application/json; charset=utf-8"
+                        )
                         self.send_header(
                             "Content-Disposition",
                             'attachment; filename="earth-export.json"',

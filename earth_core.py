@@ -137,9 +137,7 @@ def initialize_database():
     secure(path, parent_created)
     try:
         db.executescript(SCHEMA)
-        db.execute(
-            "INSERT INTO profile (id, updated_at) VALUES (1, ?)", (timestamp(),)
-        )
+        db.execute("INSERT INTO profile (id, updated_at) VALUES (1, ?)", (timestamp(),))
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         db.commit()
     finally:
@@ -276,9 +274,17 @@ def exported_json(db):
         review = dict(row)
         review["answers"] = json.loads(review.pop("answers_json"))
         reviews.append(review)
-    return json.dumps(
-        {"open_loops": loops, "profile": profile, "quests": quests, "reviews": reviews},
-        ensure_ascii=False,
-        indent=2,
-        sort_keys=True,
-    ) + "\n"
+    return (
+        json.dumps(
+            {
+                "open_loops": loops,
+                "profile": profile,
+                "quests": quests,
+                "reviews": reviews,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )

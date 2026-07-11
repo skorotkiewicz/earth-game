@@ -10,14 +10,20 @@ run *args:
 web *args:
     ./earth web {{ args }}
 
-check:
+fmt:
+    ruff format earth earth_core.py earth_web.py test_earth.py
+
+lint:
+    ruff check earth earth_core.py earth_web.py test_earth.py
+
+check: lint
     python3 -m py_compile earth earth_core.py earth_web.py
     bash -n PKGBUILD
 
 test: check
     python3 -m unittest -v
 
-add-tag:
+add-tag: test
     #!/usr/bin/env bash
     set -euo pipefail
     VERSION=$(./earth --version)

@@ -110,9 +110,7 @@ class EarthCLITest(unittest.TestCase):
         )
         self.run_earth("quest", "start", "1")
 
-        cancelled = self.run_earth(
-            "quest", "start", "2", input_text="n\n", check=False
-        )
+        cancelled = self.run_earth("quest", "start", "2", input_text="n\n", check=False)
         self.assertNotEqual(0, cancelled.returncode)
         self.assertIn("cancelled", cancelled.stderr)
 
@@ -144,17 +142,13 @@ class EarthCLITest(unittest.TestCase):
         self.assertNotEqual(0, missing_next.returncode)
         self.assertIn("pass --next", missing_next.stderr)
 
-        missing_values = self.run_earth(
-            "character", "edit", input_text="", check=False
-        )
+        missing_values = self.run_earth("character", "edit", input_text="", check=False)
         self.assertNotEqual(0, missing_values.returncode)
         self.assertIn("pass --values", missing_values.stderr)
 
     def test_open_loops_review_and_export(self):
         self.run_earth("init")
-        self.run_earth(
-            "quest", "add", "--title", "Reconnect", "--next", "message Sam"
-        )
+        self.run_earth("quest", "add", "--title", "Reconnect", "--next", "message Sam")
         self.run_earth("quest", "start", "1")
         self.run_earth("loop", "add", "--text", "book dentist")
         self.assertIn("[1] OPEN book dentist", self.run_earth("loop", "list").stdout)
@@ -198,17 +192,26 @@ class EarthCLITest(unittest.TestCase):
                 "SELECT created_at FROM reviews ORDER BY id DESC LIMIT 1"
             ).fetchone()[0]
         expected_local_date = (
-            datetime.fromisoformat(stored.replace("Z", "+00:00")) + timedelta(hours=14)
-        ).date().isoformat()
+            (
+                datetime.fromisoformat(stored.replace("Z", "+00:00"))
+                + timedelta(hours=14)
+            )
+            .date()
+            .isoformat()
+        )
         local_today = self.run_earth("today", extra_env={"TZ": "Etc/GMT-14"})
-        self.assertIn(f"Review: last completed {expected_local_date}", local_today.stdout)
+        self.assertIn(
+            f"Review: last completed {expected_local_date}", local_today.stdout
+        )
 
         exported = self.run_earth("export").stdout
         data = json.loads(exported)
         self.assertEqual("book dentist", data["open_loops"][0]["description"])
         self.assertEqual("", data["profile"]["values"])
         self.assertEqual("call Sam", data["quests"][0]["next_action"])
-        self.assertEqual("helped a neighbor", data["reviews"][0]["answers"]["contribution"])
+        self.assertEqual(
+            "helped a neighbor", data["reviews"][0]["answers"]["contribution"]
+        )
         self.assertEqual(exported, self.run_earth("export").stdout)
 
         export_path = Path(self.temp.name) / "export.json"
@@ -264,7 +267,9 @@ class EarthCLITest(unittest.TestCase):
                 page = response.read().decode("utf-8")
 
             self.assertEqual("no-store", response.headers["Cache-Control"])
-            self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+            self.assertIn(
+                "frame-ancestors 'none'", response.headers["Content-Security-Policy"]
+            )
             self.assertEqual("nosniff", response.headers["X-Content-Type-Options"])
             token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 
@@ -297,13 +302,11 @@ class EarthCLITest(unittest.TestCase):
             self.assertIn("Current quest · #1", page)
             self.assertIn("call Sam", page)
             self.assertIn(
-                "aria-label=\"Complete quest #1: Practice &lt;b&gt;kindness&lt;/b&gt;\"",
+                'aria-label="Complete quest #1: Practice &lt;b&gt;kindness&lt;/b&gt;"',
                 page,
             )
 
-            page = post(
-                "/loop/add", {"csrf": token, "description": "book the dentist"}
-            )
+            page = post("/loop/add", {"csrf": token, "description": "book the dentist"})
             self.assertIn("book the dentist", page)
             page = post("/loop/close", {"csrf": token, "id": "1"})
             self.assertNotIn("book the dentist", page)
@@ -347,9 +350,9 @@ class EarthCLITest(unittest.TestCase):
 
             origin_request = Request(
                 base + "/loop/add",
-                data=urlencode(
-                    {"csrf": token, "description": "must not save"}
-                ).encode("utf-8"),
+                data=urlencode({"csrf": token, "description": "must not save"}).encode(
+                    "utf-8"
+                ),
                 headers={"Origin": "https://example.com"},
             )
             with self.assertRaises(HTTPError) as origin_error:
