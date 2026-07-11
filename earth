@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -77,11 +78,15 @@ def timestamp():
     return now_utc().isoformat().replace("+00:00", "Z")
 
 
+def parse_timestamp(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def data_path():
     override = os.environ.get("EARTH_GAME_DB")
     if override:
         return Path(override).expanduser()
-    root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    root = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share")
     return root / "earth-game/earth.db"
 
 
@@ -161,6 +166,7 @@ def cmd_init(_args):
     parent_created = not path.parent.exists()
     path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     db = sqlite3.connect(path)
+    secure(path, parent_created)
     try:
         db.executescript(SCHEMA)
         db.execute(
@@ -407,6 +413,7 @@ def cmd_review(args):
 def cmd_export(args):
     with database() as db:
         profile = dict(db.execute("SELECT * FROM profile WHERE id = 1").fetchone())
+        profile["values"] = profile.pop("values_text")
         quests = [
             dict(row) for row in db.execute("SELECT * FROM quests ORDER BY id").fetchall()
         ]
@@ -429,9 +436,16 @@ def cmd_export(args):
         print(output, end="")
         return
     target = Path(args.path).expanduser()
-    target.write_text(output, encoding="utf-8")
-    if os.name == "posix":
-        os.chmod(target, 0o600)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.name}.", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as export_file:
+            export_file.write(output)
+        os.link(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
     print(f"Exported to {target}")
 
 
@@ -457,10 +471,13 @@ def cmd_today(_args):
         print("No current quest. Create one with 'earth quest add'.")
     print(f"Open loops: {loop_count}")
 
-    due = not last_review or now_utc() - datetime.fromisoformat(
-        last_review[0].replace("Z", "+00:00")
-    ) >= timedelta(days=7)
-    print("Review: due" if due else f"Review: last completed {last_review[0][:10]}")
+    last_review_at = parse_timestamp(last_review[0]) if last_review else None
+    due = not last_review_at or now_utc() - last_review_at >= timedelta(days=7)
+    print(
+        "Review: due"
+        if due
+        else f"Review: last completed {last_review_at.astimezone().date().isoformat()}"
+    )
 
 
 def build_parser():

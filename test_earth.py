@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -19,9 +20,10 @@ class EarthCLITest(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_earth(self, *args, input_text=None, check=True):
+    def run_earth(self, *args, input_text=None, check=True, extra_env=None):
         env = os.environ.copy()
         env["EARTH_GAME_DB"] = str(self.db)
+        env.update(extra_env or {})
         result = subprocess.run(
             [sys.executable, str(EARTH), *map(str, args)],
             input=input_text,
@@ -128,12 +130,46 @@ class EarthCLITest(unittest.TestCase):
         self.assertIn("Next action: call Sam", today.stdout)
         self.assertIn("Review: last completed", today.stdout)
 
+        self.run_earth(
+            "review",
+            "--love",
+            "kept listening",
+            "--adaptation",
+            "stayed flexible",
+            "--alignment",
+            "still yes",
+            "--contribution",
+            "shared notes",
+            "--next",
+            "do not replace the quest action",
+        )
+        self.assertIn("Next action: call Sam", self.run_earth("today").stdout)
+
+        with sqlite3.connect(self.db) as db:
+            stored = db.execute(
+                "SELECT created_at FROM reviews ORDER BY id DESC LIMIT 1"
+            ).fetchone()[0]
+        expected_local_date = (
+            datetime.fromisoformat(stored.replace("Z", "+00:00")) + timedelta(hours=14)
+        ).date().isoformat()
+        local_today = self.run_earth("today", extra_env={"TZ": "Etc/GMT-14"})
+        self.assertIn(f"Review: last completed {expected_local_date}", local_today.stdout)
+
         exported = self.run_earth("export").stdout
         data = json.loads(exported)
         self.assertEqual("book dentist", data["open_loops"][0]["description"])
+        self.assertEqual("", data["profile"]["values"])
         self.assertEqual("call Sam", data["quests"][0]["next_action"])
         self.assertEqual("helped a neighbor", data["reviews"][0]["answers"]["contribution"])
         self.assertEqual(exported, self.run_earth("export").stdout)
+
+        export_path = Path(self.temp.name) / "export.json"
+        self.run_earth("export", export_path)
+        self.assertEqual(data, json.loads(export_path.read_text(encoding="utf-8")))
+        overwrite = self.run_earth("export", export_path, check=False)
+        self.assertNotEqual(0, overwrite.returncode)
+        self.assertIn("File exists", overwrite.stderr)
+        self.assertEqual([], list(export_path.parent.glob(".export.json.*")))
 
         self.run_earth("loop", "close", "1")
         self.assertIn("Open loops: 0", self.run_earth("today").stdout)
