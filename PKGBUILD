@@ -1,5 +1,5 @@
 pkgname=earth-game
-pkgver=0.1.0
+pkgver=0.0.0
 pkgrel=1
 pkgdesc='Private local-first quest and reflection companion with CLI and web UI'
 arch=('any')
