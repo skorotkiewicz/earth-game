@@ -1,5 +1,12 @@
 # Earth Game
 
+![Earth Game: a connected planet with a glowing quest path](assets/earth-game-banner.png)
+
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+![Dependencies: standard library](https://img.shields.io/badge/dependencies-standard_library_only-2ea44f)
+![Storage: local SQLite](https://img.shields.io/badge/storage-local_SQLite-0f80cc?logo=sqlite&logoColor=white)
+![Network: offline](https://img.shields.io/badge/network-offline-6f42c1)
+
 A private, offline command-line companion for choosing quests, taking the next
 action, closing open loops, and reviewing your direction before drift sets in.
 
@@ -8,7 +15,7 @@ dependencies, accounts, network access, scoring, or AI-generated advice.
 
 ## Requirements
 
-- Python 3
+- Python 3.8 or newer
 - A Unix-like terminal
 
 ## Quick start
