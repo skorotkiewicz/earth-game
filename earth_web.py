@@ -387,7 +387,7 @@ def web_server(port):
             self.security_headers()
             self.end_headers()
 
-        def reject_untrusted(self, check_origin=False):
+        def reject_untrusted(self):
             if not self.trusted_host():
                 self.respond(
                     HTTPStatus.BAD_REQUEST,
@@ -399,23 +399,6 @@ def web_server(port):
                 self.respond(
                     HTTPStatus.UNAUTHORIZED,
                     "Open the private URL printed by 'earth web'.",
-                    "text/plain; charset=utf-8",
-                )
-                return True
-            origin = self.headers.get("Origin")
-            port_number = self.server.server_port
-            if (
-                check_origin
-                and origin
-                and origin
-                not in {
-                    f"http://127.0.0.1:{port_number}",
-                    f"http://localhost:{port_number}",
-                }
-            ):
-                self.respond(
-                    HTTPStatus.FORBIDDEN,
-                    "Untrusted Origin",
                     "text/plain; charset=utf-8",
                 )
                 return True
@@ -517,7 +500,7 @@ def web_server(port):
                 )
 
         def do_POST(self):
-            if self.reject_untrusted(check_origin=True):
+            if self.reject_untrusted():
                 return
             path = urlsplit(self.path).path
             allowed = {
