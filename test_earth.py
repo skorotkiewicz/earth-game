@@ -6,13 +6,13 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from datetime import datetime, timedelta
+from http.cookiejar import CookieJar
 from pathlib import Path
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError
+from urllib.parse import urlencode, urlsplit
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 
 EARTH = Path(__file__).with_name("earth")
@@ -233,35 +233,50 @@ class EarthCLITest(unittest.TestCase):
             text=True,
             env=env,
         )
-        base = f"http://127.0.0.1:{port}"
+        startup = process.stdout.readline().strip()
+        if not startup.startswith("Earth Game web UI: "):
+            stdout, stderr = process.communicate(timeout=5)
+            self.fail(f"web server did not start:\n{startup}\n{stdout}\n{stderr}")
+        private_url = startup.removeprefix("Earth Game web UI: ")
+        parts = urlsplit(private_url)
+        base = f"{parts.scheme}://{parts.netloc}"
+        opener = build_opener(HTTPCookieProcessor(CookieJar()))
 
         def get(path="/"):
-            with urlopen(base + path, timeout=2) as response:
+            with opener.open(base + path, timeout=2) as response:
                 return response, response.read().decode("utf-8")
 
         def post(path, fields):
             request = Request(base + path, data=urlencode(fields).encode("utf-8"))
-            with urlopen(request, timeout=2) as response:
+            with opener.open(request, timeout=2) as response:
                 return response.read().decode("utf-8")
 
         try:
-            for _ in range(60):
-                try:
-                    response, page = get()
-                    break
-                except URLError:
-                    if process.poll() is not None:
-                        stdout, stderr = process.communicate()
-                        self.fail(f"web server stopped:\n{stdout}\n{stderr}")
-                    time.sleep(0.05)
-            else:
-                self.fail("web server did not start")
+            with self.assertRaises(HTTPError) as unauthorized:
+                urlopen(base + "/", timeout=2)
+            self.assertEqual(401, unauthorized.exception.code)
+            unauthorized.exception.close()
+
+            with opener.open(private_url, timeout=2) as response:
+                page = response.read().decode("utf-8")
 
             self.assertEqual("no-store", response.headers["Cache-Control"])
             self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
             self.assertEqual("nosniff", response.headers["X-Content-Type-Options"])
             token = re.search(r'name="csrf" value="([^"]+)"', page).group(1)
 
+            page = post(
+                "/character",
+                {
+                    "csrf": token,
+                    "values_text": "kindness",
+                    "strengths": "listening",
+                    "frictions": "overcommitting",
+                    "purpose": "Make useful things",
+                    "anti_vision": "Busy without meaning",
+                },
+            )
+            self.assertIn("Make useful things", page)
             page = post(
                 "/quest/add",
                 {
@@ -278,11 +293,17 @@ class EarthCLITest(unittest.TestCase):
             page = post("/quest/start", {"csrf": token, "id": "1"})
             self.assertIn("Current quest · #1", page)
             self.assertIn("call Sam", page)
+            self.assertIn(
+                "aria-label=\"Complete quest #1: Practice &lt;b&gt;kindness&lt;/b&gt;\"",
+                page,
+            )
 
             page = post(
                 "/loop/add", {"csrf": token, "description": "book the dentist"}
             )
             self.assertIn("book the dentist", page)
+            page = post("/loop/close", {"csrf": token, "id": "1"})
+            self.assertNotIn("book the dentist", page)
             page = post(
                 "/review",
                 {
@@ -297,18 +318,46 @@ class EarthCLITest(unittest.TestCase):
             )
             self.assertIn("call tomorrow", page)
 
+            post(
+                "/quest/add",
+                {
+                    "csrf": token,
+                    "title": "A quest to drop",
+                    "next_action": "nothing",
+                },
+            )
+            page = post("/quest/drop", {"csrf": token, "id": "2"})
+            self.assertIn("A quest to drop", page)
+            page = post("/quest/done", {"csrf": token, "id": "1"})
+            self.assertIn("Choose what moves next", page)
+
             _, exported = get("/export")
-            self.assertEqual("call tomorrow", json.loads(exported)["quests"][0]["next_action"])
+            quests = json.loads(exported)["quests"]
+            self.assertEqual("call tomorrow", quests[0]["next_action"])
+            self.assertEqual("completed", quests[0]["status"])
+            self.assertEqual("dropped", quests[1]["status"])
 
             with self.assertRaises(HTTPError) as csrf_error:
                 post("/loop/add", {"csrf": "wrong", "description": "must not save"})
             self.assertEqual(403, csrf_error.exception.code)
             csrf_error.exception.close()
 
+            origin_request = Request(
+                base + "/loop/add",
+                data=urlencode(
+                    {"csrf": token, "description": "must not save"}
+                ).encode("utf-8"),
+                headers={"Origin": "https://example.com"},
+            )
+            with self.assertRaises(HTTPError) as origin_error:
+                opener.open(origin_request, timeout=2)
+            self.assertEqual(403, origin_error.exception.code)
+            origin_error.exception.close()
+
             untrusted = Request(base + "/")
             untrusted.add_unredirected_header("Host", "example.com")
             with self.assertRaises(HTTPError) as host_error:
-                urlopen(untrusted, timeout=2)
+                opener.open(untrusted, timeout=2)
             self.assertEqual(400, host_error.exception.code)
             host_error.exception.close()
         finally:

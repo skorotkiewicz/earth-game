@@ -11,7 +11,7 @@ A private, offline companion for choosing quests, taking the next action,
 closing open loops, and reviewing your direction before drift sets in.
 
 Earth Game uses Python's standard library and SQLite. It has no third-party
-dependencies, accounts, network access, scoring, or AI-generated advice.
+dependencies, accounts, outbound requests, scoring, or AI-generated advice.
 
 ## Requirements
 
@@ -35,8 +35,9 @@ Prefer a browser? Start the same app as a local-only web UI:
 ./earth web
 ```
 
-It opens `http://127.0.0.1:8765/` and uses the same database as the CLI. Stop it
-with Ctrl-C. It never binds to your LAN or makes external requests.
+It opens a private session URL on `http://127.0.0.1:8765/` and uses the same
+database as the CLI. Stop it with Ctrl-C. It never binds to your LAN or makes
+external requests.
 
 Commands prompt for missing text. Options also support non-interactive use:
 
@@ -97,7 +98,8 @@ EARTH_GAME_DB=/path/to/earth.db ./earth init
 
 The database and JSON exports are created with private permissions on Unix.
 Earth Game makes no external network requests; the web command listens only on
-the local loopback address.
+the local loopback address and requires the private session URL printed at
+startup.
 
 To back up or restore, copy the SQLite database while no Earth Game command is
 running. `./earth --help` prints the exact active data path.
@@ -106,7 +108,13 @@ running. `./earth --help` prints the exact active data path.
 
 ```sh
 python3 -m unittest -v
-python3 -m py_compile earth
+python3 -m py_compile earth earth_core.py earth_web.py
 ```
+
+## Structure
+
+- `earth` contains CLI parsing and terminal interaction.
+- `earth_core.py` contains SQLite and shared domain operations.
+- `earth_web.py` contains the local HTTP server and HTML interface.
 
 See [ROADMAP.md](ROADMAP.md) for the product decisions and future-change rules.

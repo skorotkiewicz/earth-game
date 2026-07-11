@@ -65,7 +65,7 @@ a real limitation.
 - AI-generated goals, coaching, or automated judgments
 - Calendars, notifications, timers, habit tracking, or a full task manager
 - A GUI framework, TUI framework, plug-in system, or configuration framework
-- Remote access, accounts, authentication, or multi-user hosting
+- Remote access, user accounts, persistent login systems, or multi-user hosting
 - Medical, mental-health, or substance-use recommendations
 
 The health pillar is only a user-defined reflection label. The program must not
@@ -209,8 +209,10 @@ Checkpoint: tag `v0.1.0` only when the definition of done below is satisfied.
 
 - Serve a responsive, server-rendered dashboard from `earth web`.
 - Reuse the same profile, quest, loop, review, export, and SQLite operations.
-- Bind only to `127.0.0.1`; require CSRF tokens and trusted Host/Origin headers.
-- Keep the implementation in the executable with no JavaScript or dependency.
+- Bind only to `127.0.0.1`; require a private session URL, CSRF tokens, and
+  trusted Host/Origin headers.
+- Keep HTTP and HTML in `earth_web.py`, shared rules in `earth_core.py`, and use
+  no JavaScript or dependency.
 
 Checkpoint: the core quest loop works through HTTP without weakening CLI or
 local-data safety.
@@ -222,9 +224,10 @@ local-data safety.
 - Exactly one quest can be current.
 - Reviews and open loops persist and appear correctly in `today`.
 - Exported JSON contains the profile, quests, open loops, and reviews.
-- The program makes no network requests and creates files only in its data path.
+- The program makes no outbound or external requests. It creates app state only
+  in its data path, except when the user explicitly chooses an export path.
 - `python3 -m unittest -v` passes using only the standard library.
-- `python3 -m py_compile earth` succeeds.
+- `python3 -m py_compile earth earth_core.py earth_web.py` succeeds.
 - Help output is enough to discover every command without reading source code.
 - The web UI supports the core loop on desktop and narrow screens, makes no
   external requests, and rejects cross-origin mutations.

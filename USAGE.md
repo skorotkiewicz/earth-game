@@ -28,10 +28,10 @@ not overwrite it.
 ./earth web
 ```
 
-Your browser opens `http://127.0.0.1:8765/`. The dashboard exposes the same
-character, quests, open loops, weekly review, and JSON export as the CLI, using
-the same database. Changes made in one interface immediately appear in the
-other.
+Your browser opens a private session URL on `http://127.0.0.1:8765/`. The
+dashboard exposes the same character, quests, open loops, weekly review, and
+JSON export as the CLI, using the same database. Changes made in one interface
+immediately appear in the other.
 
 The server listens only on this computer. Stop it with Ctrl-C. To keep the
 browser closed or choose another local port:
@@ -42,7 +42,8 @@ browser closed or choose another local port:
 ```
 
 There is intentionally no option to expose the server to your LAN or the
-internet.
+internet. Anyone without the private startup URL receives an unauthorized
+response, including other users on a shared computer.
 
 ## 2. Describe the character you are playing
 
