@@ -1,0 +1,92 @@
+# Earth Game
+
+A private, offline command-line companion for choosing quests, taking the next
+action, closing open loops, and reviewing your direction before drift sets in.
+
+Earth Game uses Python's standard library and SQLite. It has no third-party
+dependencies, accounts, network access, scoring, or AI-generated advice.
+
+## Requirements
+
+- Python 3
+- A Unix-like terminal
+
+## Quick start
+
+```sh
+./earth init
+./earth character edit
+./earth quest add
+./earth quest list
+./earth quest start 1
+./earth today
+```
+
+Commands prompt for missing text. Options also support non-interactive use:
+
+```sh
+./earth quest add \
+  --title "Reconnect with an old friend" \
+  --next "Send Sam a message" \
+  --pillar connection \
+  --driver purpose
+
+./earth quest start 1
+./earth today
+```
+
+Run `./earth --help` or `./earth COMMAND --help` for the complete interface.
+
+## Commands
+
+- `earth init` creates local storage without overwriting an existing database.
+- `earth character show|edit` manages values, strengths, frictions, purpose,
+  and anti-vision.
+- `earth quest add|list|start|done|drop` manages quests. Only one quest can be
+  current.
+- `earth loop add|list|close` captures and closes unresolved tasks or concerns.
+- `earth today` shows the current quest, next action, open-loop count, and
+  review status.
+- `earth review` records five short reflections. Pass `--update-quest` to use
+  the `--next` answer as the current quest's next action.
+- `earth export [PATH]` exports all data as readable JSON. Existing files are
+  never overwritten.
+
+## Typical loop
+
+```sh
+./earth loop add --text "Book the dentist"
+./earth today
+./earth quest done 1
+./earth review
+./earth export earth-export.json
+```
+
+## Data and privacy
+
+The default database is:
+
+```text
+${XDG_DATA_HOME:-$HOME/.local/share}/earth-game/earth.db
+```
+
+Set `EARTH_GAME_DB` to use another path:
+
+```sh
+EARTH_GAME_DB=/path/to/earth.db ./earth init
+```
+
+The database and JSON exports are created with private permissions on Unix.
+Earth Game makes no network requests.
+
+To back up or restore, copy the SQLite database while no Earth Game command is
+running. `./earth --help` prints the exact active data path.
+
+## Tests
+
+```sh
+python3 -m unittest -v
+python3 -m py_compile earth
+```
+
+See [ROADMAP.md](ROADMAP.md) for the product decisions and future-change rules.
