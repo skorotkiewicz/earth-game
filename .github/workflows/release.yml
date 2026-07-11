@@ -1,0 +1,79 @@
+name: Release Earth Game
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Test and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Test
+        run: |
+          python3 -m py_compile earth earth_core.py earth_web.py
+          python3 -m unittest -v
+          bash -n PKGBUILD
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package="earth-game-${version}"
+          mkdir -p "dist/${package}/assets"
+          install -m755 earth "dist/${package}/earth"
+          install -m644 earth_core.py earth_web.py test_earth.py README.md USAGE.md LICENSE \
+            "dist/${package}/"
+          install -m644 assets/earth-game-banner.png "dist/${package}/assets/"
+          tar -C dist -czf "dist/${package}.tar.gz" "$package"
+          sha256sum "dist/${package}.tar.gz" > "dist/${package}.tar.gz.sha256"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+          generate_release_notes: true
+
+  aur-publish:
+    name: Publish to AUR
+    needs: release
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Generate .SRCINFO
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed -i "s/^pkgver=.*/pkgver=${version}/" PKGBUILD
+          sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+          pacman -Syu --noconfirm git openssh pacman-contrib
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- updpkgsums
+          runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        with:
+          pkgname: earth-game
+          pkgbuild: ./PKGBUILD
+          assets: |
+            ./.SRCINFO
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "aur: ${{ github.ref_name }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519

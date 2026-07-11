@@ -324,7 +324,6 @@ def cmd_today(_args):
 def build_parser():
     path = data_path()
     parser = argparse.ArgumentParser(
-        prog="earth",
         description="A private, offline companion for chosen quests and reflection.",
         epilog=(
             "Start: earth init; earth character edit; earth quest add; earth today\n\n"
