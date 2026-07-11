@@ -46,6 +46,25 @@ class EarthCLITest(unittest.TestCase):
         self.assertIn("Open loops: 0", today.stdout)
         self.assertIn("Review: due", today.stdout)
 
+    def test_help_is_discoverable_at_every_command_level(self):
+        for args, expected in (
+            ((), "earth init"),
+            (("character",), "edit      edit the profile"),
+            (("quest",), "start     make a quest current"),
+            (("loop",), "close     close an open loop"),
+        ):
+            with self.subTest(args=args):
+                result = self.run_earth(*args)
+                self.assertIn("usage:", result.stdout)
+                self.assertIn(expected, result.stdout)
+
+        add_help = self.run_earth("quest", "add", "--help")
+        self.assertIn("concrete next action; prompted if omitted", add_help.stdout)
+        start_help = self.run_earth("quest", "start", "--help")
+        self.assertIn("-y", start_help.stdout)
+        loop_help = self.run_earth("loop", "list", "--help")
+        self.assertIn("-a", loop_help.stdout)
+
     def test_character_and_quest_lifecycle(self):
         self.run_earth("init")
         self.run_earth(
@@ -86,7 +105,7 @@ class EarthCLITest(unittest.TestCase):
         self.run_earth("quest", "start", "2", "--yes")
         today = self.run_earth("today")
         self.assertIn("Purpose: leave things better", today.stdout)
-        self.assertIn("Current quest: Take a walk", today.stdout)
+        self.assertIn("Current quest: [2] Take a walk", today.stdout)
         self.assertIn("Next action: put on shoes", today.stdout)
 
         with sqlite3.connect(self.db) as db:
@@ -97,10 +116,25 @@ class EarthCLITest(unittest.TestCase):
 
         self.run_earth("quest", "done", "2")
         quests = self.run_earth("quest", "list", "--all")
+        self.assertIn("pillar=production, driver=purpose", quests.stdout)
         self.assertIn("COMPLETED Take a walk", quests.stdout)
         missing = self.run_earth("quest", "done", "999", check=False)
         self.assertNotEqual(0, missing.returncode)
         self.assertIn("not found", missing.stderr)
+
+    def test_noninteractive_errors_name_the_missing_option(self):
+        self.run_earth("init")
+        missing_next = self.run_earth(
+            "quest", "add", "--title", "Incomplete", input_text="", check=False
+        )
+        self.assertNotEqual(0, missing_next.returncode)
+        self.assertIn("pass --next", missing_next.stderr)
+
+        missing_values = self.run_earth(
+            "character", "edit", input_text="", check=False
+        )
+        self.assertNotEqual(0, missing_values.returncode)
+        self.assertIn("pass --values", missing_values.stderr)
 
     def test_open_loops_review_and_export(self):
         self.run_earth("init")

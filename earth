@@ -127,19 +127,20 @@ def database():
         db.close()
 
 
-def ask(label, default=None):
+def ask(label, default=None, option=None):
     suffix = f" [{default}]" if default else ""
     try:
         value = input(f"{label}{suffix}: ")
     except EOFError as error:
-        raise EarthError(f"missing {label.lower()}; pass it as an option") from error
+        hint = f"; pass {option}" if option else ""
+        raise EarthError(f"missing {label.rstrip('?').lower()}{hint}") from error
     return default if not value and default is not None else value
 
 
-def required(value, label):
-    value = ask(label) if value is None else value
+def required(value, label, option):
+    value = ask(label, option=option) if value is None else value
     if not value.strip():
-        raise EarthError(f"{label.lower()} must not be empty")
+        raise EarthError(f"{label.lower()} must not be empty; pass {option}")
     return value
 
 
@@ -196,23 +197,24 @@ def cmd_character_show(_args):
 
 def cmd_character_edit(args):
     fields = (
-        ("values_text", "Values"),
-        ("strengths", "Strengths"),
-        ("frictions", "Frictions"),
-        ("purpose", "Purpose"),
-        ("anti_vision", "Anti-vision"),
+        ("values_text", "Values", "--values"),
+        ("strengths", "Strengths", "--strengths"),
+        ("frictions", "Frictions", "--frictions"),
+        ("purpose", "Purpose", "--purpose"),
+        ("anti_vision", "Anti-vision", "--anti-vision"),
     )
     with database() as db:
         profile = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-        supplied = any(getattr(args, field) is not None for field, _ in fields)
+        supplied = any(getattr(args, field) is not None for field, _, _ in fields)
         values = {
             field: getattr(args, field)
-            for field, _ in fields
+            for field, _, _ in fields
             if getattr(args, field) is not None
         }
         if not supplied:
             values = {
-                field: ask(label, profile[field]) for field, label in fields
+                field: ask(label, profile[field], option)
+                for field, label, option in fields
             }
         assignments = ", ".join(f"{field} = ?" for field in values)
         db.execute(
@@ -223,8 +225,8 @@ def cmd_character_edit(args):
 
 
 def cmd_quest_add(args):
-    title = required(args.title, "Title")
-    next_action = required(args.next_action, "Next action")
+    title = required(args.title, "Title", "--title")
+    next_action = required(args.next_action, "Next action", "--next")
     with database() as db:
         cursor = db.execute(
             """INSERT INTO quests
@@ -252,11 +254,17 @@ def cmd_quest_list(args):
                 ORDER BY status != 'current', id"""
         ).fetchall()
     if not quests:
-        print("No quests.")
+        print("No quests." if args.all else "No current or planned quests. Use --all for history.")
         return
     for quest in quests:
         tags = ", ".join(
-            value for value in (quest["pillar"], quest["driver"], quest["horizon"]) if value
+            f"{label}={value}"
+            for label, value in (
+                ("pillar", quest["pillar"]),
+                ("driver", quest["driver"]),
+                ("horizon", quest["horizon"]),
+            )
+            if value
         )
         suffix = f" ({tags})" if tags else ""
         print(
@@ -279,7 +287,7 @@ def cmd_quest_start(args):
             "SELECT id, title FROM quests WHERE status = 'current'"
         ).fetchone()
         if current and not args.yes and not confirm(
-            f"Return current quest {current['id']} to the backlog?"
+            f"Return current quest [{current['id']}] {one_line(current['title'])} to the backlog?"
         ):
             raise EarthError("quest change cancelled")
         if current:
@@ -326,7 +334,7 @@ def cmd_quest_drop(args):
 
 
 def cmd_loop_add(args):
-    description = required(args.description, "Open loop")
+    description = required(args.description, "Open loop", "--text")
     with database() as db:
         cursor = db.execute(
             "INSERT INTO open_loops (description, created_at) VALUES (?, ?)",
@@ -343,7 +351,7 @@ def cmd_loop_list(args):
             f"SELECT * FROM open_loops {where} ORDER BY id"
         ).fetchall()
     if not loops:
-        print("No open loops.")
+        print("No loops." if args.all else "No open loops. Use --all for history.")
         return
     for loop in loops:
         print(f"[{loop['id']}] {loop['status'].upper()} {one_line(loop['description'])}")
@@ -368,11 +376,11 @@ def cmd_loop_close(args):
 
 def cmd_review(args):
     questions = (
-        ("love_connection", "Where did love or connection guide you?", args.love),
-        ("adaptation", "What changed, and how did you adapt?", args.adaptation),
-        ("alignment", "Is the current quest authentic and aligned?", args.alignment),
-        ("contribution", "What did you contribute?", args.contribution),
-        ("next_action", "What next action or pillar now matters?", args.next_action),
+        ("love_connection", "Where did love or connection guide you?", args.love, "--love"),
+        ("adaptation", "What changed, and how did you adapt?", args.adaptation, "--adaptation"),
+        ("alignment", "Is the current quest authentic and aligned?", args.alignment, "--alignment"),
+        ("contribution", "What did you contribute?", args.contribution, "--contribution"),
+        ("next_action", "What next action or pillar now matters?", args.next_action, "--next"),
     )
     with database() as db:
         loops = db.execute(
@@ -386,8 +394,8 @@ def cmd_review(args):
             print("Open loops: none")
 
         answers = {
-            key: ask(question) if value is None else value
-            for key, question, value in questions
+            key: ask(question, option=option) if value is None else value
+            for key, question, value, option in questions
         }
         current = db.execute(
             "SELECT id FROM quests WHERE status = 'current'"
@@ -398,7 +406,7 @@ def cmd_review(args):
         if current and not update_quest and sys.stdin.isatty():
             update_quest = confirm("Use that answer as the current quest's next action?")
         if update_quest:
-            next_action = required(answers["next_action"], "Next action")
+            next_action = required(answers["next_action"], "Next action", "--next")
             db.execute(
                 "UPDATE quests SET next_action = ? WHERE id = ?",
                 (next_action, current["id"]),
@@ -453,8 +461,11 @@ def cmd_today(_args):
     with database() as db:
         purpose = db.execute("SELECT purpose FROM profile WHERE id = 1").fetchone()[0]
         quest = db.execute(
-            "SELECT title, next_action FROM quests WHERE status = 'current'"
+            "SELECT id, title, next_action FROM quests WHERE status = 'current'"
         ).fetchone()
+        planned_count = db.execute(
+            "SELECT count(*) FROM quests WHERE status = 'planned'"
+        ).fetchone()[0]
         loop_count = db.execute(
             "SELECT count(*) FROM open_loops WHERE status = 'open'"
         ).fetchone()[0]
@@ -465,8 +476,13 @@ def cmd_today(_args):
     if purpose:
         print(f"Purpose: {purpose}")
     if quest:
-        print(f"Current quest: {quest['title']}")
+        print(f"Current quest: [{quest['id']}] {quest['title']}")
         print(f"Next action: {quest['next_action']}")
+    elif planned_count:
+        print(
+            f"No current quest. Choose from {planned_count} planned with "
+            "'earth quest start ID'."
+        )
     else:
         print("No current quest. Create one with 'earth quest add'.")
     print(f"Open loops: {loop_count}")
@@ -486,6 +502,7 @@ def build_parser():
         prog="earth",
         description="A private, offline companion for chosen quests and reflection.",
         epilog=(
+            "Start: earth init; earth character edit; earth quest add; earth today\n\n"
             f"Data: {path}\n"
             "Backup: copy that database while earth is not running.\n"
             "Restore: replace it with a backup while earth is not running.\n"
@@ -493,67 +510,99 @@ def build_parser():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    commands = parser.add_subparsers(dest="command", required=True)
-    init = commands.add_parser("init", help="create local storage")
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+    parser.set_defaults(handler=lambda _args: parser.print_help())
+    init = commands.add_parser(
+        "init", help="create local storage", description="Create local storage."
+    )
     init.set_defaults(handler=cmd_init)
 
-    character = commands.add_parser("character", help="show or edit the character")
-    character_commands = character.add_subparsers(dest="action", required=True)
+    character = commands.add_parser(
+        "character",
+        help="show or edit the character",
+        description="Show or edit values, strengths, frictions, purpose, and anti-vision.",
+    )
+    character_commands = character.add_subparsers(dest="action", metavar="ACTION")
+    character.set_defaults(handler=lambda _args: character.print_help())
     character_show = character_commands.add_parser("show", help="show the profile")
     character_show.set_defaults(handler=cmd_character_show)
     character_edit = character_commands.add_parser("edit", help="edit the profile")
-    character_edit.add_argument("--values", dest="values_text")
-    character_edit.add_argument("--strengths")
-    character_edit.add_argument("--frictions")
-    character_edit.add_argument("--purpose")
-    character_edit.add_argument("--anti-vision", dest="anti_vision")
+    character_edit.add_argument(
+        "--values", dest="values_text", help="core values, as free text"
+    )
+    character_edit.add_argument("--strengths", help="natural or developed strengths")
+    character_edit.add_argument("--frictions", help="recurring obstacles or weak points")
+    character_edit.add_argument("--purpose", help="the contribution or direction that matters")
+    character_edit.add_argument(
+        "--anti-vision", dest="anti_vision", help="the future to actively avoid"
+    )
     character_edit.set_defaults(handler=cmd_character_edit)
 
-    quest = commands.add_parser("quest", help="manage quests")
-    quest_commands = quest.add_subparsers(dest="action", required=True)
+    quest = commands.add_parser(
+        "quest", help="manage quests", description="Create and move quests through their lifecycle."
+    )
+    quest_commands = quest.add_subparsers(dest="action", metavar="ACTION")
+    quest.set_defaults(handler=lambda _args: quest.print_help())
     quest_add = quest_commands.add_parser("add", help="create a planned quest")
-    quest_add.add_argument("--title")
-    quest_add.add_argument("--next", dest="next_action")
-    quest_add.add_argument("--why")
-    quest_add.add_argument("--pillar", choices=PILLARS)
-    quest_add.add_argument("--driver", choices=DRIVERS)
-    quest_add.add_argument("--horizon")
+    quest_add.add_argument("--title", help="short quest title; prompted if omitted")
+    quest_add.add_argument(
+        "--next", dest="next_action", help="concrete next action; prompted if omitted"
+    )
+    quest_add.add_argument("--why", help="why this quest matters")
+    quest_add.add_argument("--pillar", choices=PILLARS, help="area of life this quest serves")
+    quest_add.add_argument("--driver", choices=DRIVERS, help="motivation behind this quest")
+    quest_add.add_argument("--horizon", help="free-form target horizon, such as 'this month'")
     quest_add.set_defaults(handler=cmd_quest_add)
     quest_list = quest_commands.add_parser("list", help="list quests")
-    quest_list.add_argument("--all", action="store_true")
+    quest_list.add_argument(
+        "-a", "--all", action="store_true", help="include completed and dropped quests"
+    )
     quest_list.set_defaults(handler=cmd_quest_list)
     quest_start = quest_commands.add_parser("start", help="make a quest current")
-    quest_start.add_argument("id", type=int)
-    quest_start.add_argument("--yes", action="store_true", help="replace current quest")
+    quest_start.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
+    quest_start.add_argument(
+        "-y", "--yes", action="store_true", help="replace the current quest without prompting"
+    )
     quest_start.set_defaults(handler=cmd_quest_start)
     quest_done = quest_commands.add_parser("done", help="complete a quest")
-    quest_done.add_argument("id", type=int)
+    quest_done.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
     quest_done.set_defaults(handler=cmd_quest_done)
     quest_drop = quest_commands.add_parser("drop", help="drop a quest")
-    quest_drop.add_argument("id", type=int)
+    quest_drop.add_argument("id", type=int, metavar="ID", help="quest ID from 'quest list'")
     quest_drop.set_defaults(handler=cmd_quest_drop)
 
-    loop = commands.add_parser("loop", help="capture and close open loops")
-    loop_commands = loop.add_subparsers(dest="action", required=True)
+    loop = commands.add_parser(
+        "loop",
+        help="capture and close open loops",
+        description="Capture unresolved obligations without changing the current quest.",
+    )
+    loop_commands = loop.add_subparsers(dest="action", metavar="ACTION")
+    loop.set_defaults(handler=lambda _args: loop.print_help())
     loop_add = loop_commands.add_parser("add", help="capture an open loop")
-    loop_add.add_argument("--text", dest="description")
+    loop_add.add_argument(
+        "--text", dest="description", help="open-loop text; prompted if omitted"
+    )
     loop_add.set_defaults(handler=cmd_loop_add)
     loop_list = loop_commands.add_parser("list", help="list open loops")
-    loop_list.add_argument("--all", action="store_true")
+    loop_list.add_argument(
+        "-a", "--all", action="store_true", help="include closed loops"
+    )
     loop_list.set_defaults(handler=cmd_loop_list)
     loop_close = loop_commands.add_parser("close", help="close an open loop")
-    loop_close.add_argument("id", type=int)
+    loop_close.add_argument("id", type=int, metavar="ID", help="open-loop ID from 'loop list'")
     loop_close.set_defaults(handler=cmd_loop_close)
 
     today = commands.add_parser("today", help="show the current focus")
     today.set_defaults(handler=cmd_today)
 
     review = commands.add_parser("review", help="record a weekly reflection")
-    review.add_argument("--love")
-    review.add_argument("--adaptation")
-    review.add_argument("--alignment")
-    review.add_argument("--contribution")
-    review.add_argument("--next", dest="next_action")
+    review.add_argument("--love", help="reflection on love and connection")
+    review.add_argument("--adaptation", help="reflection on adapting to change")
+    review.add_argument("--alignment", help="reflection on authenticity and alignment")
+    review.add_argument("--contribution", help="reflection on contribution")
+    review.add_argument(
+        "--next", dest="next_action", help="next action or pillar needing attention"
+    )
     review.add_argument(
         "--update-quest",
         action="store_true",
@@ -562,7 +611,9 @@ def build_parser():
     review.set_defaults(handler=cmd_review)
 
     export = commands.add_parser("export", help="export all data as JSON")
-    export.add_argument("path", nargs="?")
+    export.add_argument(
+        "path", nargs="?", metavar="PATH", help="new output file; omit to print JSON"
+    )
     export.set_defaults(handler=cmd_export)
     return parser
 

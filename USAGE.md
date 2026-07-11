@@ -74,7 +74,7 @@ Example `today` output:
 
 ```text
 Purpose: make useful knowledge easier to understand
-Current quest: Move into a data analyst role
+Current quest: [1] Move into a data analyst role
 Next action: List three analyst roles whose work looks meaningful
 Open loops: 0
 Review: due
