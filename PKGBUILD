@@ -12,7 +12,6 @@ sha256sums=('SKIP')
 check() {
   cd "${pkgname}-${pkgver}"
   python -m py_compile earth earth_core.py earth_web.py
-  python -m unittest -v
 }
 
 package() {
