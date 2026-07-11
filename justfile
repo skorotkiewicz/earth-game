@@ -21,7 +21,7 @@ check: lint
     bash -n PKGBUILD
 
 test: check
-    python3 -m unittest -v
+    timeout 30 | python3 -m unittest -v
 
 add-tag: test
     #!/usr/bin/env bash
