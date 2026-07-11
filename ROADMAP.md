@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a private, offline command-line companion that turns the ideas in
+Build a private, offline companion with a CLI and optional local web UI that turns the ideas in
 `PLAN.md` into a small repeatable loop:
 
 ```text
@@ -55,7 +55,8 @@ a real limitation.
 - Open-loop capture and closure
 - A short weekly review
 - Human-readable terminal output and JSON export
-- Local, user-owned storage with no network access
+- An optional browser UI served only on the local loopback address
+- Local, user-owned storage with no external network access
 
 ### Deliberately out of scope
 
@@ -63,7 +64,8 @@ a real limitation.
 - XP, coins, streaks, rankings, or an algorithmic life score
 - AI-generated goals, coaching, or automated judgments
 - Calendars, notifications, timers, habit tracking, or a full task manager
-- A GUI, TUI framework, plug-in system, or configuration framework
+- A GUI framework, TUI framework, plug-in system, or configuration framework
+- Remote access, accounts, authentication, or multi-user hosting
 - Medical, mental-health, or substance-use recommendations
 
 The health pillar is only a user-defined reflection label. The program must not
@@ -90,6 +92,7 @@ earth loop close ID
 earth today
 earth review
 earth export [PATH]
+earth web [--port PORT] [--no-open]
 ```
 
 Commands that create or edit content prompt for missing values. Flags may
@@ -202,6 +205,16 @@ Checkpoint: `earth today` exposes drift without becoming another task manager.
 
 Checkpoint: tag `v0.1.0` only when the definition of done below is satisfied.
 
+### 5. Local web UI
+
+- Serve a responsive, server-rendered dashboard from `earth web`.
+- Reuse the same profile, quest, loop, review, export, and SQLite operations.
+- Bind only to `127.0.0.1`; require CSRF tokens and trusted Host/Origin headers.
+- Keep the implementation in the executable with no JavaScript or dependency.
+
+Checkpoint: the core quest loop works through HTTP without weakening CLI or
+local-data safety.
+
 ## Definition of done for v0.1.0
 
 - A new user can initialize the app and start a first quest in under a minute.
@@ -213,6 +226,8 @@ Checkpoint: tag `v0.1.0` only when the definition of done below is satisfied.
 - `python3 -m unittest -v` passes using only the standard library.
 - `python3 -m py_compile earth` succeeds.
 - Help output is enough to discover every command without reading source code.
+- The web UI supports the core loop on desktop and narrow screens, makes no
+  external requests, and rejects cross-origin mutations.
 
 ## After v0.1.0
 

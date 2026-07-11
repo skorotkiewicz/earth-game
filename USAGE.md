@@ -22,6 +22,28 @@ whenever you need the exact options.
 This creates a private SQLite database. Running `init` again is safe and does
 not overwrite it.
 
+## Optional: use the local web UI
+
+```sh
+./earth web
+```
+
+Your browser opens `http://127.0.0.1:8765/`. The dashboard exposes the same
+character, quests, open loops, weekly review, and JSON export as the CLI, using
+the same database. Changes made in one interface immediately appear in the
+other.
+
+The server listens only on this computer. Stop it with Ctrl-C. To keep the
+browser closed or choose another local port:
+
+```sh
+./earth web --no-open
+./earth web --port 9000
+```
+
+There is intentionally no option to expose the server to your LAN or the
+internet.
+
 ## 2. Describe the character you are playing
 
 Imagine Maya wants to move into more meaningful work without sacrificing the

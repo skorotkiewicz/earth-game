@@ -5,10 +5,10 @@
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 ![Dependencies: standard library](https://img.shields.io/badge/dependencies-standard_library_only-2ea44f)
 ![Storage: local SQLite](https://img.shields.io/badge/storage-local_SQLite-0f80cc?logo=sqlite&logoColor=white)
-![Network: offline](https://img.shields.io/badge/network-offline-6f42c1)
+![Network: no external requests](https://img.shields.io/badge/network-no_external_requests-6f42c1)
 
-A private, offline command-line companion for choosing quests, taking the next
-action, closing open loops, and reviewing your direction before drift sets in.
+A private, offline companion for choosing quests, taking the next action,
+closing open loops, and reviewing your direction before drift sets in.
 
 Earth Game uses Python's standard library and SQLite. It has no third-party
 dependencies, accounts, network access, scoring, or AI-generated advice.
@@ -28,6 +28,15 @@ dependencies, accounts, network access, scoring, or AI-generated advice.
 ./earth quest start 1
 ./earth today
 ```
+
+Prefer a browser? Start the same app as a local-only web UI:
+
+```sh
+./earth web
+```
+
+It opens `http://127.0.0.1:8765/` and uses the same database as the CLI. Stop it
+with Ctrl-C. It never binds to your LAN or makes external requests.
 
 Commands prompt for missing text. Options also support non-interactive use:
 
@@ -59,6 +68,8 @@ See [USAGE.md](USAGE.md) for complete real-world walkthroughs.
   the `--next` answer as the current quest's next action.
 - `earth export [PATH]` exports all data as readable JSON. Existing files are
   never overwritten.
+- `earth web` starts the local browser UI. Use `--no-open` or choose a port with
+  `--port PORT`.
 
 ## Typical loop
 
@@ -85,7 +96,8 @@ EARTH_GAME_DB=/path/to/earth.db ./earth init
 ```
 
 The database and JSON exports are created with private permissions on Unix.
-Earth Game makes no network requests.
+Earth Game makes no external network requests; the web command listens only on
+the local loopback address.
 
 To back up or restore, copy the SQLite database while no Earth Game command is
 running. `./earth --help` prints the exact active data path.
