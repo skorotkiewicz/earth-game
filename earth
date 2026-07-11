@@ -1,0 +1,564 @@
+#!/usr/bin/env python3
+"""A private, offline companion for chosen quests and reflection."""
+
+import argparse
+import json
+import os
+import sqlite3
+import sys
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+
+SCHEMA_VERSION = 1
+PILLARS = ("connection", "production", "mindset", "health", "awareness")
+DRIVERS = ("curiosity", "passion", "purpose", "autonomy", "mastery")
+SCHEMA = """
+CREATE TABLE profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    values_text TEXT NOT NULL DEFAULT '',
+    strengths TEXT NOT NULL DEFAULT '',
+    frictions TEXT NOT NULL DEFAULT '',
+    purpose TEXT NOT NULL DEFAULT '',
+    anti_vision TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE quests (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    why TEXT NOT NULL DEFAULT '',
+    next_action TEXT NOT NULL,
+    pillar TEXT CHECK (
+        pillar IS NULL OR pillar IN
+        ('connection', 'production', 'mindset', 'health', 'awareness')
+    ),
+    driver TEXT CHECK (
+        driver IS NULL OR driver IN
+        ('curiosity', 'passion', 'purpose', 'autonomy', 'mastery')
+    ),
+    horizon TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'planned' CHECK (
+        status IN ('planned', 'current', 'completed', 'dropped')
+    ),
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE UNIQUE INDEX one_current_quest
+ON quests(status) WHERE status = 'current';
+
+CREATE TABLE open_loops (
+    id INTEGER PRIMARY KEY,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+    created_at TEXT NOT NULL,
+    closed_at TEXT
+);
+
+CREATE TABLE reviews (
+    id INTEGER PRIMARY KEY,
+    answers_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+
+class EarthError(Exception):
+    pass
+
+
+def now_utc():
+    return datetime.now(timezone.utc).replace(microsecond=0)
+
+
+def timestamp():
+    return now_utc().isoformat().replace("+00:00", "Z")
+
+
+def data_path():
+    override = os.environ.get("EARTH_GAME_DB")
+    if override:
+        return Path(override).expanduser()
+    root = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+    return root / "earth-game/earth.db"
+
+
+def secure(path, parent_created=False):
+    if os.name != "posix":
+        return
+    if parent_created or path.parent.name == "earth-game":
+        os.chmod(path.parent, 0o700)
+    if path.exists():
+        os.chmod(path, 0o600)
+
+
+def checked_connection(path):
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version != SCHEMA_VERSION:
+        db.close()
+        raise EarthError(
+            f"unsupported database schema {version}; expected {SCHEMA_VERSION}"
+        )
+    return db
+
+
+@contextmanager
+def database():
+    path = data_path()
+    if not path.is_file():
+        raise EarthError("not initialized; run 'earth init'")
+    db = checked_connection(path)
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def ask(label, default=None):
+    suffix = f" [{default}]" if default else ""
+    try:
+        value = input(f"{label}{suffix}: ")
+    except EOFError as error:
+        raise EarthError(f"missing {label.lower()}; pass it as an option") from error
+    return default if not value and default is not None else value
+
+
+def required(value, label):
+    value = ask(label) if value is None else value
+    if not value.strip():
+        raise EarthError(f"{label.lower()} must not be empty")
+    return value
+
+
+def confirm(question):
+    try:
+        return input(f"{question} [y/N]: ").strip().lower() in ("y", "yes")
+    except EOFError as error:
+        raise EarthError("confirmation required; pass --yes") from error
+
+
+def one_line(value):
+    return " / ".join(value.splitlines())
+
+
+def cmd_init(_args):
+    path = data_path()
+    if path.exists():
+        db = checked_connection(path)
+        db.close()
+        secure(path)
+        print(f"Earth Game is already initialized at {path}")
+        return
+
+    parent_created = not path.parent.exists()
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    db = sqlite3.connect(path)
+    try:
+        db.executescript(SCHEMA)
+        db.execute(
+            "INSERT INTO profile (id, updated_at) VALUES (1, ?)", (timestamp(),)
+        )
+        db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        db.commit()
+    finally:
+        db.close()
+    secure(path, parent_created)
+    print(f"Earth Game initialized at {path}")
+
+
+def cmd_character_show(_args):
+    with database() as db:
+        profile = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    fields = (
+        ("Values", "values_text"),
+        ("Strengths", "strengths"),
+        ("Frictions", "frictions"),
+        ("Purpose", "purpose"),
+        ("Anti-vision", "anti_vision"),
+    )
+    for label, field in fields:
+        print(f"{label}: {profile[field] or '(not set)'}")
+
+
+def cmd_character_edit(args):
+    fields = (
+        ("values_text", "Values"),
+        ("strengths", "Strengths"),
+        ("frictions", "Frictions"),
+        ("purpose", "Purpose"),
+        ("anti_vision", "Anti-vision"),
+    )
+    with database() as db:
+        profile = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+        supplied = any(getattr(args, field) is not None for field, _ in fields)
+        values = {
+            field: getattr(args, field)
+            for field, _ in fields
+            if getattr(args, field) is not None
+        }
+        if not supplied:
+            values = {
+                field: ask(label, profile[field]) for field, label in fields
+            }
+        assignments = ", ".join(f"{field} = ?" for field in values)
+        db.execute(
+            f"UPDATE profile SET {assignments}, updated_at = ? WHERE id = 1",
+            (*values.values(), timestamp()),
+        )
+    print("Character updated.")
+
+
+def cmd_quest_add(args):
+    title = required(args.title, "Title")
+    next_action = required(args.next_action, "Next action")
+    with database() as db:
+        cursor = db.execute(
+            """INSERT INTO quests
+               (title, why, next_action, pillar, driver, horizon, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                title,
+                args.why or "",
+                next_action,
+                args.pillar,
+                args.driver,
+                args.horizon or "",
+                timestamp(),
+            ),
+        )
+        quest_id = cursor.lastrowid
+    print(f"Quest {quest_id} created.")
+
+
+def cmd_quest_list(args):
+    where = "" if args.all else "WHERE status IN ('current', 'planned')"
+    with database() as db:
+        quests = db.execute(
+            f"""SELECT * FROM quests {where}
+                ORDER BY status != 'current', id"""
+        ).fetchall()
+    if not quests:
+        print("No quests.")
+        return
+    for quest in quests:
+        tags = ", ".join(
+            value for value in (quest["pillar"], quest["driver"], quest["horizon"]) if value
+        )
+        suffix = f" ({tags})" if tags else ""
+        print(
+            f"[{quest['id']}] {quest['status'].upper()} "
+            f"{one_line(quest['title'])} — {one_line(quest['next_action'])}{suffix}"
+        )
+
+
+def cmd_quest_start(args):
+    with database() as db:
+        quest = db.execute("SELECT * FROM quests WHERE id = ?", (args.id,)).fetchone()
+        if not quest:
+            raise EarthError(f"quest {args.id} not found")
+        if quest["status"] not in ("planned", "current"):
+            raise EarthError(f"quest {args.id} is {quest['status']}")
+        if quest["status"] == "current":
+            print(f"Quest {args.id} is already current.")
+            return
+        current = db.execute(
+            "SELECT id, title FROM quests WHERE status = 'current'"
+        ).fetchone()
+        if current and not args.yes and not confirm(
+            f"Return current quest {current['id']} to the backlog?"
+        ):
+            raise EarthError("quest change cancelled")
+        if current:
+            db.execute("UPDATE quests SET status = 'planned' WHERE id = ?", (current["id"],))
+        db.execute(
+            "UPDATE quests SET status = 'current', completed_at = NULL WHERE id = ?",
+            (args.id,),
+        )
+    print(f"Quest {args.id} is now current.")
+
+
+def cmd_quest_done(args):
+    with database() as db:
+        quest = db.execute("SELECT status FROM quests WHERE id = ?", (args.id,)).fetchone()
+        if not quest:
+            raise EarthError(f"quest {args.id} not found")
+        if quest["status"] == "completed":
+            print(f"Quest {args.id} is already completed.")
+            return
+        if quest["status"] == "dropped":
+            raise EarthError(f"quest {args.id} is dropped")
+        db.execute(
+            "UPDATE quests SET status = 'completed', completed_at = ? WHERE id = ?",
+            (timestamp(), args.id),
+        )
+    print(f"Quest {args.id} completed.")
+
+
+def cmd_quest_drop(args):
+    with database() as db:
+        quest = db.execute("SELECT status FROM quests WHERE id = ?", (args.id,)).fetchone()
+        if not quest:
+            raise EarthError(f"quest {args.id} not found")
+        if quest["status"] == "dropped":
+            print(f"Quest {args.id} is already dropped.")
+            return
+        if quest["status"] == "completed":
+            raise EarthError(f"quest {args.id} is completed")
+        db.execute(
+            "UPDATE quests SET status = 'dropped', completed_at = NULL WHERE id = ?",
+            (args.id,),
+        )
+    print(f"Quest {args.id} dropped.")
+
+
+def cmd_loop_add(args):
+    description = required(args.description, "Open loop")
+    with database() as db:
+        cursor = db.execute(
+            "INSERT INTO open_loops (description, created_at) VALUES (?, ?)",
+            (description, timestamp()),
+        )
+        loop_id = cursor.lastrowid
+    print(f"Open loop {loop_id} captured.")
+
+
+def cmd_loop_list(args):
+    where = "" if args.all else "WHERE status = 'open'"
+    with database() as db:
+        loops = db.execute(
+            f"SELECT * FROM open_loops {where} ORDER BY id"
+        ).fetchall()
+    if not loops:
+        print("No open loops.")
+        return
+    for loop in loops:
+        print(f"[{loop['id']}] {loop['status'].upper()} {one_line(loop['description'])}")
+
+
+def cmd_loop_close(args):
+    with database() as db:
+        loop = db.execute(
+            "SELECT status FROM open_loops WHERE id = ?", (args.id,)
+        ).fetchone()
+        if not loop:
+            raise EarthError(f"open loop {args.id} not found")
+        if loop["status"] == "closed":
+            print(f"Open loop {args.id} is already closed.")
+            return
+        db.execute(
+            "UPDATE open_loops SET status = 'closed', closed_at = ? WHERE id = ?",
+            (timestamp(), args.id),
+        )
+    print(f"Open loop {args.id} closed.")
+
+
+def cmd_review(args):
+    questions = (
+        ("love_connection", "Where did love or connection guide you?", args.love),
+        ("adaptation", "What changed, and how did you adapt?", args.adaptation),
+        ("alignment", "Is the current quest authentic and aligned?", args.alignment),
+        ("contribution", "What did you contribute?", args.contribution),
+        ("next_action", "What next action or pillar now matters?", args.next_action),
+    )
+    with database() as db:
+        loops = db.execute(
+            "SELECT id, description FROM open_loops WHERE status = 'open' ORDER BY id"
+        ).fetchall()
+        if loops:
+            print("Open loops:")
+            for loop in loops:
+                print(f"  [{loop['id']}] {one_line(loop['description'])}")
+        else:
+            print("Open loops: none")
+
+        answers = {
+            key: ask(question) if value is None else value
+            for key, question, value in questions
+        }
+        current = db.execute(
+            "SELECT id FROM quests WHERE status = 'current'"
+        ).fetchone()
+        if args.update_quest and not current:
+            raise EarthError("no current quest to update")
+        update_quest = args.update_quest
+        if current and not update_quest and sys.stdin.isatty():
+            update_quest = confirm("Use that answer as the current quest's next action?")
+        if update_quest:
+            next_action = required(answers["next_action"], "Next action")
+            db.execute(
+                "UPDATE quests SET next_action = ? WHERE id = ?",
+                (next_action, current["id"]),
+            )
+        db.execute(
+            "INSERT INTO reviews (answers_json, created_at) VALUES (?, ?)",
+            (json.dumps(answers, ensure_ascii=False, sort_keys=True), timestamp()),
+        )
+    print("Review saved.")
+
+
+def cmd_export(args):
+    with database() as db:
+        profile = dict(db.execute("SELECT * FROM profile WHERE id = 1").fetchone())
+        quests = [
+            dict(row) for row in db.execute("SELECT * FROM quests ORDER BY id").fetchall()
+        ]
+        loops = [
+            dict(row)
+            for row in db.execute("SELECT * FROM open_loops ORDER BY id").fetchall()
+        ]
+        reviews = []
+        for row in db.execute("SELECT * FROM reviews ORDER BY id").fetchall():
+            review = dict(row)
+            review["answers"] = json.loads(review.pop("answers_json"))
+            reviews.append(review)
+    output = json.dumps(
+        {"open_loops": loops, "profile": profile, "quests": quests, "reviews": reviews},
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    if not args.path:
+        print(output, end="")
+        return
+    target = Path(args.path).expanduser()
+    target.write_text(output, encoding="utf-8")
+    if os.name == "posix":
+        os.chmod(target, 0o600)
+    print(f"Exported to {target}")
+
+
+def cmd_today(_args):
+    with database() as db:
+        purpose = db.execute("SELECT purpose FROM profile WHERE id = 1").fetchone()[0]
+        quest = db.execute(
+            "SELECT title, next_action FROM quests WHERE status = 'current'"
+        ).fetchone()
+        loop_count = db.execute(
+            "SELECT count(*) FROM open_loops WHERE status = 'open'"
+        ).fetchone()[0]
+        last_review = db.execute(
+            "SELECT created_at FROM reviews ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    if purpose:
+        print(f"Purpose: {purpose}")
+    if quest:
+        print(f"Current quest: {quest['title']}")
+        print(f"Next action: {quest['next_action']}")
+    else:
+        print("No current quest. Create one with 'earth quest add'.")
+    print(f"Open loops: {loop_count}")
+
+    due = not last_review or now_utc() - datetime.fromisoformat(
+        last_review[0].replace("Z", "+00:00")
+    ) >= timedelta(days=7)
+    print("Review: due" if due else f"Review: last completed {last_review[0][:10]}")
+
+
+def build_parser():
+    path = data_path()
+    parser = argparse.ArgumentParser(
+        prog="earth",
+        description="A private, offline companion for chosen quests and reflection.",
+        epilog=(
+            f"Data: {path}\n"
+            "Backup: copy that database while earth is not running.\n"
+            "Restore: replace it with a backup while earth is not running.\n"
+            "Uninstall: remove this script; remove the data directory separately."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    init = commands.add_parser("init", help="create local storage")
+    init.set_defaults(handler=cmd_init)
+
+    character = commands.add_parser("character", help="show or edit the character")
+    character_commands = character.add_subparsers(dest="action", required=True)
+    character_show = character_commands.add_parser("show", help="show the profile")
+    character_show.set_defaults(handler=cmd_character_show)
+    character_edit = character_commands.add_parser("edit", help="edit the profile")
+    character_edit.add_argument("--values", dest="values_text")
+    character_edit.add_argument("--strengths")
+    character_edit.add_argument("--frictions")
+    character_edit.add_argument("--purpose")
+    character_edit.add_argument("--anti-vision", dest="anti_vision")
+    character_edit.set_defaults(handler=cmd_character_edit)
+
+    quest = commands.add_parser("quest", help="manage quests")
+    quest_commands = quest.add_subparsers(dest="action", required=True)
+    quest_add = quest_commands.add_parser("add", help="create a planned quest")
+    quest_add.add_argument("--title")
+    quest_add.add_argument("--next", dest="next_action")
+    quest_add.add_argument("--why")
+    quest_add.add_argument("--pillar", choices=PILLARS)
+    quest_add.add_argument("--driver", choices=DRIVERS)
+    quest_add.add_argument("--horizon")
+    quest_add.set_defaults(handler=cmd_quest_add)
+    quest_list = quest_commands.add_parser("list", help="list quests")
+    quest_list.add_argument("--all", action="store_true")
+    quest_list.set_defaults(handler=cmd_quest_list)
+    quest_start = quest_commands.add_parser("start", help="make a quest current")
+    quest_start.add_argument("id", type=int)
+    quest_start.add_argument("--yes", action="store_true", help="replace current quest")
+    quest_start.set_defaults(handler=cmd_quest_start)
+    quest_done = quest_commands.add_parser("done", help="complete a quest")
+    quest_done.add_argument("id", type=int)
+    quest_done.set_defaults(handler=cmd_quest_done)
+    quest_drop = quest_commands.add_parser("drop", help="drop a quest")
+    quest_drop.add_argument("id", type=int)
+    quest_drop.set_defaults(handler=cmd_quest_drop)
+
+    loop = commands.add_parser("loop", help="capture and close open loops")
+    loop_commands = loop.add_subparsers(dest="action", required=True)
+    loop_add = loop_commands.add_parser("add", help="capture an open loop")
+    loop_add.add_argument("--text", dest="description")
+    loop_add.set_defaults(handler=cmd_loop_add)
+    loop_list = loop_commands.add_parser("list", help="list open loops")
+    loop_list.add_argument("--all", action="store_true")
+    loop_list.set_defaults(handler=cmd_loop_list)
+    loop_close = loop_commands.add_parser("close", help="close an open loop")
+    loop_close.add_argument("id", type=int)
+    loop_close.set_defaults(handler=cmd_loop_close)
+
+    today = commands.add_parser("today", help="show the current focus")
+    today.set_defaults(handler=cmd_today)
+
+    review = commands.add_parser("review", help="record a weekly reflection")
+    review.add_argument("--love")
+    review.add_argument("--adaptation")
+    review.add_argument("--alignment")
+    review.add_argument("--contribution")
+    review.add_argument("--next", dest="next_action")
+    review.add_argument(
+        "--update-quest",
+        action="store_true",
+        help="use --next as the current quest's next action",
+    )
+    review.set_defaults(handler=cmd_review)
+
+    export = commands.add_parser("export", help="export all data as JSON")
+    export.add_argument("path", nargs="?")
+    export.set_defaults(handler=cmd_export)
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
+    try:
+        args.handler(args)
+    except (EarthError, OSError, sqlite3.Error) as error:
+        print(f"earth: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
